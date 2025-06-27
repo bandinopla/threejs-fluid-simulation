@@ -1,21 +1,40 @@
-# React + TypeScript + Vite
+# ThreeJs Fluid Simulation
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+[Play Demo here](https://threejs-fluid-simulation.vercel.app/)
 
-While this project uses React, Vite supports many popular JS frameworks. [See all the supported frameworks](https://vitejs.dev/guide/#scaffolding-your-first-vite-project).
+<img src="./screenshot.png?raw=true" width="880">
 
-## Deploy Your Own
+## References
 
-Deploy your own Vite project with Vercel.
+This is a port from the [WebGL-Fluid-Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation) made by [Pavel Dobryakov](https://github.com/PavelDoGreat) into [ThreeJs](https://github.com/mrdoob/three.js) in a way that is easily implemented to deform a plane to create a sense of liquid. 
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/vercel/examples/tree/main/framework-boilerplates/vite-react&template=vite-react)
+## Use
+To use this, you instantiate the material `FluidV3Material`
 
-_Live Example: https://vite-react-example.vercel.app_
+```js
+const fluidMat = new FluidV3Material( 
+    renderer, // reference to the threejs renderer (needed to do the simulation)
+    textureWidth,  // size of textures in pixel
+    textureHeight, 
+    objectCount // int: how many objects you estimate will need to track for movement
+    );
 
-### Deploying From Your Terminal
-
-You can deploy your new Vite project with a single command from your terminal using [Vercel CLI](https://vercel.com/download):
-
-```shell
-$ vercel
+// remember to give the geometry the same aspect ratio as the image...
+const planeGeo = new THREE.PlaneGeometry(1, textureHeight/textureWidth, 132, 132);
+      planeGeo.rotateX(-Math.PI / 2);
+const fluidMesh = new THREE.Mesh( planeGeo, this.fluidMat );
 ```
+
+And then, on your update loop:
+
+```js
+    //[...] move your objects positions as you wish... then
+
+    fluidMat.update( delta, fluidMesh ); // this will run the simulation
+```
+
+
+
+## License
+
+The code is available under the [MIT license](LICENSE)
