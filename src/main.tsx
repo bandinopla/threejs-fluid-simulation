@@ -67,7 +67,7 @@ let time = 0;
   scene.add( ball );
   ball.position.y = .02;
 
-  let spot = new THREE.PointLight();
+  const spot = new THREE.PointLight();
   spot.castShadow = true;
   spot.intensity = 0.1;spot.position.set(0,.2,0)
   ball.add( spot );
@@ -91,7 +91,7 @@ const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
 
-  let delta = clock.getDelta();
+  const delta = clock.getDelta();
 
   time += delta;
  

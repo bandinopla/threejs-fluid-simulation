@@ -23,7 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-import { Color, DataTexture, FloatType, Mesh, MeshPhysicalMaterial, Object3D, Raycaster, RenderTarget, RGBAFormat, ShaderMaterial, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, type WebGLProgramParametersWithUniforms } from "three";
+import { Color, DataTexture, FloatType, Mesh, MeshPhysicalMaterial, Object3D, Raycaster, RGBAFormat, ShaderMaterial, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, type WebGLProgramParametersWithUniforms } from "three";
 import { FullScreenQuad } from "three/examples/jsm/Addons.js";
 
 /**
@@ -581,7 +581,7 @@ export class FluidV3Material extends MeshPhysicalMaterial {
     /**
      * Make normals respect the displacement... 
      */
-    override onBeforeCompile( shader: WebGLProgramParametersWithUniforms, renderer: WebGLRenderer): void {
+    override onBeforeCompile( shader: WebGLProgramParametersWithUniforms ): void {
          // Pass UV and world position to fragment shader
             shader.vertexShader = shader.vertexShader
                 .replace(
@@ -635,7 +635,7 @@ export class FluidV3Material extends MeshPhysicalMaterial {
      * @param object 
      */
     track( object:Object3D ) {
-        let freeSlot = this.tracking.find( slot=>!slot.target );
+        const freeSlot = this.tracking.find( slot=>!slot.target );
         if( !freeSlot )
         {
             throw new Error(`No room for tracking, all slots taken!`);
@@ -672,11 +672,11 @@ export class FluidV3Material extends MeshPhysicalMaterial {
 
              
             this.tmp.set(0,1,0); //<--- assuming the origin ob the objects is at the bottom of the models.
-            let wpos = obj.target.localToWorld( this.tmp );
+            const wpos = obj.target.localToWorld( this.tmp );
 
             this.tmp2.copy( wpos );
 
-            let rpos = mesh.worldToLocal( this.tmp2 );
+            const rpos = mesh.worldToLocal( this.tmp2 );
                 rpos.y = 0; // this will put the position at the surface of the mesh
 
                 mesh.localToWorld( rpos ); // this way we point at the surface of the mesh.
