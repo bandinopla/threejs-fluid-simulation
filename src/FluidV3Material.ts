@@ -577,6 +577,7 @@ export class FluidV3Material extends MeshPhysicalMaterial {
 
     velocityDissipation = 0.2;
     densityDissipation = 1;
+    pressureIterations = 20;
 
     /**
      * Make normals respect the displacement... 
@@ -774,10 +775,9 @@ export class FluidV3Material extends MeshPhysicalMaterial {
         this.clearShader.uniforms.uTexture.value = this.currentRT.texture;
         this.blit( this.clearShader );
 
-        // 6. calculates and updates pressure 
-        const PRESSURE_ITERATIONS = 20;
+        // 6. calculates and updates pressure  
 
-        for (let i = 0; i < PRESSURE_ITERATIONS; i++) {
+        for (let i = 0; i < this.pressureIterations; i++) {
             this.pressureShader.uniforms.uPressureWithDivergence.value = this.currentRT.texture;
             this.blit( this.pressureShader );
         } 

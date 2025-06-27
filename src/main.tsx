@@ -83,6 +83,7 @@ let time = 0;
         panel.add( fluidMat, "velocityDissipation", 0, 1 );
         panel.add( fluidMat, "densityDissipation", 0, 1 );
         panel.add( fluidMat, "displacementScale", -.1, .1 );
+        panel.add( fluidMat, "pressureIterations", 1, 100, 1 );
 
 //---------------------------------------------------------
 
