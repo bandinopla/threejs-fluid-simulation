@@ -25,6 +25,12 @@ const planeGeo = new THREE.PlaneGeometry(1, textureHeight/textureWidth, 132, 132
 const fluidMesh = new THREE.Mesh( planeGeo, this.fluidMat );
 ```
 
+To add objects to affect the liquid:
+```js
+fluidMat.track( someObject3D );
+```
+
+
 And then, on your update loop:
 
 ```js
