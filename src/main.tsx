@@ -6,7 +6,7 @@ import Stats from "three/examples/jsm/libs/stats.module.js";
 import GUI from "three/examples/jsm/libs/lil-gui.module.min.js";
 import "./index.css";
 import { FluidV3Material } from './FluidV3Material';
-
+import { Sky } from 'three/addons/objects/Sky.js';
 
 const stats = new Stats();
 document.body.appendChild(stats.dom);
@@ -19,6 +19,8 @@ renderer.setSize(innerWidth, innerHeight);
 
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.5;
 
 // Setup camera and scene
 const camera = new THREE.PerspectiveCamera(
@@ -32,6 +34,9 @@ camera.lookAt(0, 0, 0);
 
 const scene = new THREE.Scene();
 
+setupSky();
+
+
 const color = 0xffffff;
 const intensity = 3;
 const light = new THREE.DirectionalLight(color, intensity);
@@ -40,7 +45,7 @@ light.castShadow = true;
 scene.add(light);
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.3));
-scene.add( new THREE.AxesHelper(.1));
+//scene.add( new THREE.AxesHelper(.1));
 
 new OrbitControls(camera, renderer.domElement)
 
@@ -57,6 +62,11 @@ let time = 0;
   const fluidMat = new FluidV3Material( renderer, size,sizey, objectCount);
   const fluidMesh = new THREE.Mesh( planeGeo, fluidMat );
   scene.add( fluidMesh )
+
+  fluidMat.transmission = .8;
+  fluidMat.roughness = 0.1;
+  fluidMat.color = new THREE.Color(0xfefefe);
+  fluidMat.metalness = .5
 
   camera.position.set(.5,.5,.5)
   camera.lookAt(new THREE.Vector3(0,0,0))
@@ -108,3 +118,47 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
+
+//---------------------------
+function setupSky() {
+  const sun = new THREE.Vector3();
+  const sky = new Sky();
+				sky.scale.setScalar( 10000 );
+				scene.add( sky );
+const skyUniforms = sky.material.uniforms;
+
+				skyUniforms[ 'turbidity' ].value = 10;
+				skyUniforms[ 'rayleigh' ].value = 2;
+				skyUniforms[ 'mieCoefficient' ].value = 0.005;
+				skyUniforms[ 'mieDirectionalG' ].value = 0.8;
+
+				const parameters = {
+					elevation: 2,
+					azimuth: 180
+				};
+
+				const pmremGenerator = new THREE.PMREMGenerator( renderer );
+        let renderTarget:THREE.WebGLRenderTarget;
+
+        function updateSun() {
+
+					const phi = THREE.MathUtils.degToRad( 90 - parameters.elevation );
+					const theta = THREE.MathUtils.degToRad( parameters.azimuth );
+
+					sun.setFromSphericalCoords( 1, phi, theta );
+
+					sky.material.uniforms[ 'sunPosition' ].value.copy( sun );
+					//water.material.uniforms[ 'sunDirection' ].value.copy( sun ).normalize();
+
+					if ( renderTarget !== undefined ) renderTarget.dispose();
+
+					scene.add( sky );
+					renderTarget = pmremGenerator.fromScene( scene );
+					scene.add( sky );
+
+					scene.environment = renderTarget.texture;
+
+				}
+
+				updateSun();
+}
