@@ -1,6 +1,7 @@
 # ThreeJs Fluid Simulation
 
 [Play Demo here](https://threejs-fluid-simulation.vercel.app/)
+Download the class: [`FluidV3Material`](https://github.com/bandinopla/threejs-fluid-simulation/blob/main/src/FluidV3Material.ts)
 
 <img src="./screenshot.png?raw=true" width="880">
 
@@ -9,7 +10,8 @@
 This is a port from the [WebGL-Fluid-Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation) made by [Pavel Dobryakov](https://github.com/PavelDoGreat) into [ThreeJs](https://github.com/mrdoob/three.js) in a way that is easily implemented to deform a plane to create a sense of liquid. 
 
 ## Use
-To use this, you instantiate the material `FluidV3Material`
+
+To use this, copy and paste the [`FluidV3Material`](https://github.com/bandinopla/threejs-fluid-simulation/blob/main/src/FluidV3Material.ts) class into your own project. 
 
 ```js
 const fluidMat = new FluidV3Material( 
@@ -24,6 +26,12 @@ const planeGeo = new THREE.PlaneGeometry(1, textureHeight/textureWidth, 132, 132
       planeGeo.rotateX(-Math.PI / 2);
 const fluidMesh = new THREE.Mesh( planeGeo, this.fluidMat );
 ```
+
+To add objects to affect the liquid:
+```js
+fluidMat.track( someObject3D );
+```
+
 
 And then, on your update loop:
 
