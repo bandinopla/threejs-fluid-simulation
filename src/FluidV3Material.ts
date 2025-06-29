@@ -66,9 +66,9 @@ class SplatShader extends ShaderMaterial {
                 texelSize: { value: texelSize },
                 objectData: { value: null }, // Contains current and previous object positions 
                 count: { value: objectCount }, 
-                thickness: { value: 0.04 }, // in UV units
+                thickness: { value: 0.035223 }, // in UV units
                 aspectRatio: { value:aspectRatio } // in UV units
-                , splatForce: { value: 120 }
+                , splatForce: { value: -196 }
             },
 
             vertexShader,
@@ -153,7 +153,7 @@ class CurlShader extends ShaderMaterial {
             uniforms: {
                 uVelocity: { value: null },
                 texelSize: { value: texelSize },
-                vorticityInfluence: { value:0.5 }
+                vorticityInfluence: { value:1 }
             },
             vertexShader,
             fragmentShader:`
@@ -195,7 +195,7 @@ class VorticityShader extends ShaderMaterial {
             uniforms: {
                 uVelocityAndCurl: { value: null },
                 texelSize: { value: texelSize },
-                curl: { value: 21 },
+                curl: { value: 1 },
                 dt: { value: 0 },
             },
             vertexShader,
@@ -290,7 +290,7 @@ class ClearShader extends ShaderMaterial {
         super({
             uniforms: {
                 uTexture: { value: null },
-                value: { value: 0.8 }, //PRESSURE
+                value: { value: 0.317 }, //PRESSURE
                 texelSize: { value: texelSize }, 
             },
             vertexShader,
@@ -509,7 +509,7 @@ export class FluidV3Material extends MeshPhysicalMaterial {
         super({
             roughness: 1,   
             color: new Color( 0xffffff ), 
-            displacementScale:0.01
+            displacementScale:0.0078
         });
 
         // ping pong render textures...
@@ -575,9 +575,9 @@ export class FluidV3Material extends MeshPhysicalMaterial {
     get pressure() { return this.clearShader.uniforms.value.value }
     set pressure(v:number) {  this.clearShader.uniforms.value.value=v } 
 
-    velocityDissipation = 0.2;
-    densityDissipation = 1;
-    pressureIterations = 20;
+    velocityDissipation = 0.283;
+    densityDissipation = 0.138;
+    pressureIterations = 39;
 
     /**
      * Make normals respect the displacement... 
