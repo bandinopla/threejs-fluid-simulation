@@ -75,7 +75,7 @@ let time = 0;
   fluidMat.track( ball ); //<---- THIS IS WHAT MAKES THE LIQUID REACT TO OBJECTS
  
           //------------------- DEBUG PANEL 
-        panel.add( fluidMat, "splatForce", 1, 1000 );
+        panel.add( fluidMat, "splatForce", -1000, 1000 );
         panel.add( fluidMat, "splatThickness", 0.001, 0.2 );
         panel.add( fluidMat, "vorticityInfluence", 0.1, 1 );
         panel.add( fluidMat, "swirlIntensity", 1, 100 );
