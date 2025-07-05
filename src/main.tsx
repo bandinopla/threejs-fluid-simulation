@@ -6,7 +6,7 @@ import Stats from "three/examples/jsm/libs/stats.module.js";
 import GUI from "three/examples/jsm/libs/lil-gui.module.min.js";
 import "./index.css";
 import { FluidV3Material } from './FluidV3Material';
-import { Sky } from 'three/addons/objects/Sky.js';
+import { Sky } from 'three/addons/objects/Sky.js'; 
 
 const stats = new Stats();
 document.body.appendChild(stats.dom);
@@ -29,12 +29,12 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   100
 );
-camera.position.set(1, 1, 1);
+camera.position.set(1, 1, 2);
 camera.lookAt(0, 0, 0);
 
-const scene = new THREE.Scene();
+const scene = new THREE.Scene(); 
 
-setupSky();
+setupSky(); 
 
 
 const color = 0xffffff;
@@ -47,16 +47,16 @@ scene.add(light);
 scene.add(new THREE.AmbientLight(0xffffff, 0.3));
 //scene.add( new THREE.AxesHelper(.1));
 
-new OrbitControls(camera, renderer.domElement)
+new OrbitControls(camera, renderer.domElement) 
 
 let time = 0;
 
 //---------------------------------------- DEMO SCENE SETUP
-  const size = 1024  ;
-  const sizey = size/2;
-  const objectCount = 1;
+  const size = 1024 / 2; //Remember 4 textures will be created with this size...
+  const sizey = size ;
+  const objectCount = 2;
 
-  const planeGeo = new THREE.PlaneGeometry(1, sizey/size, 132, 132);
+  const planeGeo = new THREE.PlaneGeometry(3, 3 , 200, 200);
   planeGeo.rotateX(-Math.PI / 2);
 
   const fluidMat = new FluidV3Material( renderer, size,sizey, objectCount);
@@ -64,36 +64,49 @@ let time = 0;
   scene.add( fluidMesh )
 
   fluidMat.transmission = .8;
-  fluidMat.roughness = 0.1;
+  fluidMat.roughness = 1;
   fluidMat.color = new THREE.Color(0xfefefe);
-  fluidMat.metalness = .5
-
-  camera.position.set(.5,.5,.5)
-  camera.lookAt(new THREE.Vector3(0,0,0))
+  fluidMat.metalness = 0
+ 
+  fluidMat.splatForce = -42;
+  fluidMat.splatThickness = 0.00796;
+  
 
   scene.background = new THREE.Color(0x333333)
 
-  const ball = new THREE.Mesh( new THREE.SphereGeometry(.01,10,10), new THREE.MeshBasicMaterial({ color:0xff0000 }));
+  const ball = new THREE.Mesh( new THREE.SphereGeometry(.03,10,10), new THREE.MeshPhysicalMaterial({ color:0xff0000 }));
   scene.add( ball );
   ball.position.y = .02;
+
+
+  const ball2 = new THREE.Mesh( new THREE.SphereGeometry(.06,10,10), new THREE.MeshPhysicalMaterial({ color:0x00ff000 }));
+  scene.add( ball2 );
+  ball.position.y = .02;
+  ball.position.x = 1;
+
+  fluidMat.follow = ball;
 
   const spot = new THREE.PointLight();
   spot.castShadow = true;
   spot.intensity = 0.1;spot.position.set(0,.2,0)
   ball.add( spot );
 
-  fluidMat.track( ball ); //<---- THIS IS WHAT MAKES THE LIQUID REACT TO OBJECTS
+  fluidMat.track( ball, 1, 0xff0000 ); //<---- THIS IS WHAT MAKES THE LIQUID REACT TO OBJECTS
+  fluidMat.track( ball2, 2, 0x00ff00 ); //<---- THIS IS WHAT MAKES THE LIQUID REACT TO OBJECTS
  
           //------------------- DEBUG PANEL 
-        panel.add( fluidMat, "splatForce", -1000, 1000 );
-        panel.add( fluidMat, "splatThickness", 0.001, 0.2 );
-        panel.add( fluidMat, "vorticityInfluence", 0.1, 1 );
-        panel.add( fluidMat, "swirlIntensity", 1, 100 );
-        panel.add( fluidMat, "pressure", 0, 1 );
-        panel.add( fluidMat, "velocityDissipation", 0, 1 );
-        panel.add( fluidMat, "densityDissipation", 0, 1 );
-        panel.add( fluidMat, "displacementScale", -.1, .1 );
-        panel.add( fluidMat, "pressureIterations", 1, 100, 1 );
+        fluidMat.addDebugPanelFolder( panel );
+        fluidMat.setSettings({
+          "splatForce": -178,
+          "splatThickness": 0.0199,
+          "vorticityInfluence": 1,
+          "swirlIntensity": 7.821,
+          "pressure": 0.676,
+          "velocityDissipation": 0.283,
+          "densityDissipation": 0.761,
+          "displacementScale": 0.013,
+          "pressureIterations": 58
+        })
 
 //---------------------------------------------------------
 
@@ -105,10 +118,15 @@ function animate() {
   const delta = clock.getDelta();
 
   time += delta;
- 
 
-  ball.position.x = Math.cos(time)*.1;
-  ball.position.z = Math.sin(time)*.1;
+  //water.material.uniforms[ 'time' ].value += delta; 
+
+  ball.position.x = Math.cos(time)*.3;
+  ball.position.z = Math.sin(time)*.3; 
+
+
+    ball2.position.x = .2 + Math.sin(time)*.2;
+    ball2.position.z = Math.cos(time)*.2; 
 
   stats.begin();
   fluidMat.update( delta, fluidMesh );
@@ -118,7 +136,7 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
-
+ 
 //---------------------------
 function setupSky() {
   const sun = new THREE.Vector3();
@@ -162,3 +180,4 @@ const skyUniforms = sky.material.uniforms;
 
 				updateSun();
 }
+ 

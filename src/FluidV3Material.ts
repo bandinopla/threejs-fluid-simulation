@@ -22,8 +22,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-
-import { Color, DataTexture, FloatType, Mesh, MeshPhysicalMaterial, Object3D, Raycaster, RGBAFormat, ShaderMaterial, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, type WebGLProgramParametersWithUniforms } from "three";
+import GUI from "three/examples/jsm/libs/lil-gui.module.min.js";
+import { Color, ColorRepresentation, DataTexture, FloatType, Mesh, MeshPhysicalMaterial, Object3D, Raycaster, RGBAFormat, ShaderMaterial, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, type WebGLProgramParametersWithUniforms } from "three";
 import { FullScreenQuad } from "three/examples/jsm/Addons.js";
 
 /**
@@ -53,6 +53,29 @@ const vertexShader = `
                 }
             `;
 
+class ScrollShader extends ShaderMaterial {
+    constructor( texelSize:Vector2 ) {
+        super({
+            uniforms: {
+                uTarget: { value: null },
+                texelSize: { value: texelSize },
+                uvScroll: { value: null },
+            },
+            vertexShader,
+            fragmentShader: `
+                precision mediump float;
+                varying highp vec2 vUv;
+                uniform sampler2D uTarget;
+                uniform vec2 uvScroll;
+
+                void main() {
+                    gl_FragColor = texture2D(uTarget, vUv + uvScroll);
+                }
+            `
+        })
+    }
+}
+
 /**
  * Introduces either velocity or color into target. Depending on `splatVelocity` flag.
  */
@@ -65,8 +88,9 @@ class SplatShader extends ShaderMaterial {
                 color: { value: new Color(0xffffff) },
                 texelSize: { value: texelSize },
                 objectData: { value: null }, // Contains current and previous object positions 
+                objectPosition: { value: null }, // Contains current and previous object positions 
                 count: { value: objectCount }, 
-                thickness: { value: 0.035223 }, // in UV units
+                thickness: { value: 1 }, // in UV units
                 aspectRatio: { value:aspectRatio } // in UV units
                 , splatForce: { value: -196 }
             },
@@ -78,7 +102,8 @@ class SplatShader extends ShaderMaterial {
 
                 varying highp vec2 vUv; 
                 uniform sampler2D uTarget;
-                uniform sampler2D objectData; 
+                uniform sampler2D objectData; //color + ratio
+                uniform sampler2D objectPosition; // current + old uv positions
                 uniform int count; 
                 uniform float thickness; //TODO: this shold be individual per object to allow diferent types of bodies affecting the liquid
                 uniform float aspectRatio;
@@ -97,8 +122,10 @@ class SplatShader extends ShaderMaterial {
                         // Read object data from the texture.
                         // texelFetch is used for direct, un-interpolated pixel reads.
                         vec4 data = texelFetch(objectData, ivec2(i, 0), 0);
-                        vec2 curr = data.xy; // Current position in .xy
-                        vec2 prev = data.zw; // Previous position in .zw
+                        vec4 positions = texelFetch(objectPosition, ivec2(i, 0), 0);
+                        vec2 curr = positions.xy; // Current position in .xy
+                        vec2 prev = positions.zw; // Previous position in .zw
+                        float ratio = data.a * thickness;
 
                         vec2 diff = curr - prev;
                         if (length(diff) == 0.0) continue; // Skip if the object hasn't moved 
@@ -112,10 +139,10 @@ class SplatShader extends ShaderMaterial {
                         // Calculate distance in a way that respects the screen's aspect ratio
                         float d = distance(vUv * aspect, proj * aspect);
 
-                        if (d < thickness) {
+                        if (d < ratio) {
                             // IMPROVEMENT: Correct influence logic.
                             // Influence is strongest when distance 'd' is 0.
-                            float influence = smoothstep(thickness, 0.0, d);
+                            float influence = smoothstep(ratio, 0.0, d);
 
                             if( splatVelocity )
                             {
@@ -130,7 +157,8 @@ class SplatShader extends ShaderMaterial {
                             }
                             else 
                             {
-                                pixel = mix( pixel, vec4( color, 1.0 ), influence );
+
+                                pixel = mix( pixel, vec4( data.rgb, 1.0 ), influence );
                             }
  
                         }
@@ -469,9 +497,42 @@ class AdvectVelocityShader extends ShaderMaterial {
 type TargetObject = {
     target:Object3D|undefined
     index:number
+
+    /**
+     * % of texel size... 1=%100 a texel size.
+     */
+    ratio?:number
+    color?:Color
 }
 
+
+type Settings = {
+  splatForce: number;
+  splatThickness: number;
+  vorticityInfluence: number;
+  swirlIntensity: number;
+  pressure: number;
+  velocityDissipation: number;
+  densityDissipation: number;
+  displacementScale: number;
+  pressureIterations: number;
+};
+
 export class FluidV3Material extends MeshPhysicalMaterial {
+
+    /**
+     * The mesh will forllow this target and the position prev/current will scroll the texture...
+     */
+    private _follow?:Object3D;
+    public get follow() { return this._follow }
+    public set follow( obj:Object3D|undefined )
+    {
+        this._follow = obj;
+        obj?.getWorldPosition(this.lastFollowPos);
+    }
+
+    private lastFollowPos:Vector3 = new Vector3();
+    private followOffset:Vector3 = new Vector3();
 
     private tracking:TargetObject[] ;
 
@@ -482,14 +543,37 @@ export class FluidV3Material extends MeshPhysicalMaterial {
     private dyeRT:WebGLRenderTarget; 
     private nextDyeRT:WebGLRenderTarget; 
 
+    /**
+     * Color
+     */
+    get colorTexture() {
+         return this.dyeRT.texture;
+    }
+
+    /**
+     * Idk why you would need this but maybe you'll find this useful since it contains the velocities of the surface...
+     */
+    get dataTexture() {
+        return this.currentRT.texture;
+    }
+
     private quad:FullScreenQuad;
     private raycaster:Raycaster;
     private tmp:Vector3 = new Vector3();
     private tmp2:Vector3 = new Vector3();
-    private objectDataTexture:DataTexture;
+
+
+
+    private objectPositionTexture:DataTexture; // R
+    private objectPositionArray:Float32Array;
+
+    private objectDataTexture:DataTexture; // R
     private objectDataArray:Float32Array;
 
+
+
     // shaders involved in the simulation 
+    private scroll:ScrollShader;
     private splat:SplatShader;
     private curl:CurlShader;
     private vorticity:VorticityShader;
@@ -502,6 +586,11 @@ export class FluidV3Material extends MeshPhysicalMaterial {
 
     private t = 0;
 
+    /**
+     * If `true` on every update the `alphaMap` will be set to the `colorMap`
+     */
+    private actAsSmoke = false;
+
     constructor( private renderer:WebGLRenderer, textureWidth:number, textureHeight:number, objectCount=1 )
     { 
         const aspect = textureWidth / textureHeight;
@@ -509,7 +598,8 @@ export class FluidV3Material extends MeshPhysicalMaterial {
         super({
             roughness: 1,   
             color: new Color( 0xffffff ), 
-            displacementScale:0.0078
+            displacementScale:0.0078,
+            transparent:true
         });
 
         // ping pong render textures...
@@ -523,8 +613,9 @@ export class FluidV3Material extends MeshPhysicalMaterial {
 
 
         // 2. Create a Float32Array to hold the data
-        // 4 components per object: current.x, current.y, prev.x, prev.y
-        this.objectDataArray = new Float32Array(objectCount * 4);
+        
+        this.objectDataArray = new Float32Array(objectCount * 4);// color + ratio: R, G, B, ratio
+        this.objectPositionArray = new Float32Array(objectCount * 4);// current + old UV positions: current.x, current.y, prev.x, prev.y 
 
         // 3. Create the DataTexture
         this.objectDataTexture = new DataTexture(
@@ -535,7 +626,15 @@ export class FluidV3Material extends MeshPhysicalMaterial {
             FloatType
         );  
 
-        this.tracking = new Array(objectCount).fill(0).map((_, index) => ({ target:undefined, index }));
+        this.objectPositionTexture = new DataTexture(
+            this.objectPositionArray,
+            objectCount, // width
+            1,           // height
+            RGBAFormat,
+            FloatType
+        );  
+
+        this.tracking = new Array(objectCount).fill(0).map((_, index) => ({ target:undefined, index, ratio:1 }));
 
         this.quad = new FullScreenQuad(); 
         this.raycaster = new Raycaster();
@@ -547,6 +646,7 @@ export class FluidV3Material extends MeshPhysicalMaterial {
         const gl = renderer.getContext();
         this.supportLinearFiltering = !!gl.getExtension('OES_texture_half_float_linear');
 
+        this.scroll = new ScrollShader( texel );
         this.splat = new SplatShader( texel, objectCount, aspect );
         this.curl = new CurlShader(texel);
         this.vorticity = new VorticityShader( texel );
@@ -556,6 +656,8 @@ export class FluidV3Material extends MeshPhysicalMaterial {
         this.gradientShader = new GradientSubtractShader(texel);
         this.advectionShader = new AdvectVelocityShader(texel, texel, this.supportLinearFiltering? false : true );
     }
+
+
 
     get splatForce() {
         return this.splat.uniforms.splatForce.value;
@@ -586,21 +688,33 @@ export class FluidV3Material extends MeshPhysicalMaterial {
          // Pass UV and world position to fragment shader
             shader.vertexShader = shader.vertexShader
                 .replace(
-                '#include <common>',
-                `#include <common>
-                varying vec2 vUv;
-                varying vec3 vWorldPos;`
+                    '#include <common>',
+                    `#include <common>
+                    varying vec2 vUv;
+                    varying vec3 vWorldPos;`
                 )
                 .replace(
-                '#include <uv_vertex>',
-                `#include <uv_vertex>
-                vUv = uv;`
+                    '#include <uv_vertex>',
+                    `#include <uv_vertex>
+                    vUv = uv;`
                 )
                 .replace(
-                '#include <project_vertex>',
-                `#include <project_vertex>
-                vWorldPos = position; // (modelMatrix * vec4(position, 1.0)).xyz;`
-                );
+                    '#include <project_vertex>',
+                    `#include <project_vertex>
+                    vWorldPos = position; // (modelMatrix * vec4(position, 1.0)).xyz;`
+                ).replace(
+                    '#include <displacementmap_vertex>',
+                    `
+                    #ifdef USE_DISPLACEMENTMAP
+                    
+                        vec3 dispColor = texture2D( displacementMap, vUv ).rgb;
+                        float displacement = max( max(dispColor.r, dispColor.g),  dispColor.b );
+                        
+                        transformed += normalize( objectNormal ) * ( displacement * displacementScale + displacementBias );
+                        
+                    #endif
+                `
+    );
 
             // Displace in fragment and recompute normals from that
             shader.fragmentShader = shader.fragmentShader
@@ -616,7 +730,10 @@ export class FluidV3Material extends MeshPhysicalMaterial {
                 .replace(
                 '#include <normal_fragment_begin>',
                 `
-                    float d = texture2D(displacementMap, vUv).r- 0.5;
+                    vec3 color = texture2D(displacementMap, vUv).rgb;
+                    float luminance = dot(color, vec3(0.299, 0.587, 0.114));
+
+                    float d = luminance-0.5; //texture2D(displacementMap, vUv).r - 0.5;
                     vec3 displacedWorld = vWorldPos + vec3(0.0, d * displacementScale, 0.0);
 
                     vec3 dx = dFdx(displacedWorld);
@@ -635,7 +752,7 @@ export class FluidV3Material extends MeshPhysicalMaterial {
      * They current and past positions will be used to calculate their directional speed.
      * @param object 
      */
-    track( object:Object3D ) {
+    track( object:Object3D, ratio = 1, color:ColorRepresentation = Color.NAMES.black ) {
         const freeSlot = this.tracking.find( slot=>!slot.target );
         if( !freeSlot )
         {
@@ -647,6 +764,18 @@ export class FluidV3Material extends MeshPhysicalMaterial {
         // setear ese valor como nuestra posision
 
         freeSlot.target = object; 
+        freeSlot.ratio = ratio; 
+        freeSlot.color = new Color(color);
+
+        const i = freeSlot.index;
+
+        this.objectDataArray[ i ] = freeSlot.color.r;
+        this.objectDataArray[ i*4+1 ] = freeSlot.color.g;
+        this.objectDataArray[ i*4+2 ] = freeSlot.color.b;
+        this.objectDataArray[ i*4+3 ] = ratio;
+
+
+        this.objectDataTexture.needsUpdate = true;
     }
 
     untrack( object:Object3D )
@@ -656,6 +785,16 @@ export class FluidV3Material extends MeshPhysicalMaterial {
             if( t.target==object )
             {
                 t.target = undefined;
+                t.ratio = 1;
+                t.color?.set(0,0,0);
+
+                const i = t.index;
+
+                this.objectDataArray[ i ] = 0;
+                this.objectDataArray[ i*4+1 ] = 0;
+                this.objectDataArray[ i*4+2 ] = 0;
+                this.objectDataArray[ i*4+3 ] = 0;
+                this.objectDataTexture.needsUpdate = true;
             }
 
         });
@@ -665,15 +804,44 @@ export class FluidV3Material extends MeshPhysicalMaterial {
      * Update the positions... we use the UVs as the positions. We cast a ray from the objects to the surface simulating the liquid
      * and calculate the UV that is below the object.
      */
-    private updatePositions( mesh:Mesh ) {
-       // update objects positions....
+    private updatePositions( mesh:Mesh ) { 
+        
+
+        if( this.follow ) //asumes the Y is the up vector and we are following only in the XZ plane
+        { 
+            this.follow.getWorldPosition( this.tmp );
+
+            // 
+            this.followOffset.copy( this.tmp ).sub(this.lastFollowPos);
+            this.followOffset.y = 0; // ignore the Y axis...
+
+            this.lastFollowPos.copy( this.tmp );
+
+            if( mesh.parent )
+            {
+                mesh.parent.worldToLocal(this.tmp);
+            }
+
+            mesh.position.x = this.tmp.x;  
+            mesh.position.z = this.tmp.z;   
+        }
+
+        let offset:Vector2|undefined; //UV Offset
+
+        // update objects positions....
         this.tracking.forEach( obj => {
 
-            if( !obj.target ) return;
-
+            if( !obj.target ) return; 
              
             this.tmp.set(0,1,0); //<--- assuming the origin ob the objects is at the bottom of the models.
             const wpos = obj.target.localToWorld( this.tmp );
+            const followingObj = obj.target==this.follow;
+
+            // if this is the object we are following...
+            if( followingObj )
+            { 
+                wpos.sub( this.followOffset );// because we ant to sample the UV at the last position since following means the obj will be fixed at 0.5 0.5 UV at dead center
+            }  
 
             this.tmp2.copy( wpos );
 
@@ -695,21 +863,55 @@ export class FluidV3Material extends MeshPhysicalMaterial {
                 {
                     const i = obj.index;
 
-                    // old positions...
-                    this.objectDataArray[i * 4 + 2] = this.objectDataArray[i * 4 + 0];
-                    this.objectDataArray[i * 4 + 3] = this.objectDataArray[i * 4 + 1]; 
+                    if( followingObj )
+                    {
+                        // old positions...
+                        this.objectPositionArray[i * 4 + 2] = uv.x;
+                        this.objectPositionArray[i * 4 + 3] = uv.y; 
 
-                    // new positions...
-                    this.objectDataArray[i * 4 + 0] = uv.x;
-                    this.objectDataArray[i * 4 + 1] = uv.y; 
+                        // new positions...
+                        this.objectPositionArray[i * 4 + 0] = 0.5;
+                        this.objectPositionArray[i * 4 + 1] = 0.5; 
+
+                        ///////
+                        offset = new Vector2(  0.5-uv.x, 0.5-uv.y );
+
+                        this.scrollTextures( offset ); 
+ 
+                    }
+                    else 
+                    {
+                        // old positions...
+                        this.objectPositionArray[i * 4 + 2] = this.objectPositionArray[i * 4 + 0];
+                        this.objectPositionArray[i * 4 + 3] = this.objectPositionArray[i * 4 + 1]; 
+
+                        // new positions...
+                        this.objectPositionArray[i * 4 + 0] = uv.x;
+                        this.objectPositionArray[i * 4 + 1] = uv.y; 
+                    }
+
+                    
  
                 }
                 
-            }
+            } 
 
-        });
+        }); 
 
-        this.objectDataTexture.needsUpdate = true;
+        if( this.follow && offset!=null )
+        {
+            // the UV was scrolled, so we must dubstract this offset from all positions exept the follow target
+            this.tracking.forEach( obj => {
+                if( obj.target && obj.target!=this.follow )
+                { 
+                    const i = obj.index;
+                    this.objectPositionArray[i * 4 + 2] -= offset!.x;  
+                    this.objectPositionArray[i * 4 + 3] -= offset!.y;  
+                }
+            });
+        }
+
+        this.objectPositionTexture.needsUpdate = true;
     }
  
     /**
@@ -719,7 +921,7 @@ export class FluidV3Material extends MeshPhysicalMaterial {
     {
         this.renderer.setRenderTarget( this.nextRT );
         this.quad.material = material;
-        this.quad.render(this.renderer);
+        this.quad.render(this.renderer); 
 
         //swap
         [this.currentRT, this.nextRT] = [this.nextRT, this.currentRT];
@@ -728,10 +930,21 @@ export class FluidV3Material extends MeshPhysicalMaterial {
     private blitDye( material:ShaderMaterial ) {
         this.renderer.setRenderTarget( this.nextDyeRT );
         this.quad.material = material;
-        this.quad.render(this.renderer);
+        this.quad.render(this.renderer); 
 
         //swap
         [this.dyeRT, this.nextDyeRT] = [this.nextDyeRT, this.dyeRT];
+    }
+
+    private scrollTextures( uvStep:Vector2 )
+    {
+        this.scroll.uniforms.uvScroll.value = uvStep; 
+
+        this.scroll.uniforms.uTarget.value = this.currentRT.texture; 
+        this.blit( this.scroll );  
+ 
+        this.scroll.uniforms.uTarget.value = this.dyeRT.texture; 
+        this.blitDye( this.scroll );  
     }
 
     /** 
@@ -746,6 +959,7 @@ export class FluidV3Material extends MeshPhysicalMaterial {
 
         // 1. add new velocities based on objects movement
         this.splat.uniforms.objectData.value = this.objectDataTexture;
+        this.splat.uniforms.objectPosition.value = this.objectPositionTexture;
         this.splat.uniforms.uTarget.value = this.currentRT.texture; 
         this.splat.uniforms.splatVelocity.value = true; 
 
@@ -753,6 +967,7 @@ export class FluidV3Material extends MeshPhysicalMaterial {
 
         // add colors
         this.splat.uniforms.objectData.value = this.objectDataTexture;
+        this.splat.uniforms.objectPosition.value = this.objectPositionTexture;
         this.splat.uniforms.uTarget.value = this.dyeRT.texture; 
         this.splat.uniforms.splatVelocity.value = false; 
 
@@ -805,7 +1020,79 @@ export class FluidV3Material extends MeshPhysicalMaterial {
         
 
         this.renderer.setRenderTarget(null);
-        //this.map = this.dyeRT.texture; 
+
         this.displacementMap = this.dyeRT.texture; 
+
+        if( this.actAsSmoke )
+        { 
+            this.alphaMap = this.dyeRT.texture;
+        }  
+        this.map = this.dyeRT.texture;
+        
+    }
+
+    addDebugPanelFolder( gui:GUI, name="Fluid Material") {
+
+        const panel = gui.addFolder(name);
+
+        panel.add( this as Record<string, any>, "splatForce", -1000, 1000 );
+        panel.add( this as Record<string, any>, "splatThickness", 0.001, 0.2 );
+        panel.add( this as Record<string, any>, "vorticityInfluence", 0.1, 1 );
+        panel.add( this as Record<string, any>, "swirlIntensity", 1, 100 );
+        panel.add( this as Record<string, any>, "pressure", 0, 1 );
+        panel.add( this as Record<string, any>, "velocityDissipation", 0, 1 );
+        panel.add( this as Record<string, any>, "densityDissipation", 0, 1 );
+        panel.add( this as Record<string, any>, "displacementScale", -.1, .1 );
+        panel.add( this as Record<string, any>, "pressureIterations", 1, 100, 1 );
+        panel.add( {
+            copySettings: ()=>{
+
+                const settings = {
+                    splatForce: this.splatForce,
+                    splatThickness: this.splatThickness,
+                    vorticityInfluence: this.vorticityInfluence,
+                    swirlIntensity: this.swirlIntensity,
+                    pressure: this.pressure,
+                    velocityDissipation: this.velocityDissipation,
+                    densityDissipation: this.densityDissipation,
+                    displacementScale: this.displacementScale,
+                    pressureIterations: this.pressureIterations,
+                }
+
+                navigator.clipboard.writeText( JSON.stringify(settings, null, 2));
+                
+            }
+        }, "copySettings" );
+
+        panel.add(this as Record<string, any>, "asSolid"); 
+        panel.add(this as Record<string, any>, "asSmoke");
+    }
+
+    asSolid() {
+        this.alphaMap = null;
+        this.transparent = false;
+        this.actAsSmoke = false;
+    }
+
+    asSmoke() {
+        this.transparent = true;
+        this.actAsSmoke = true;
+        this.actAsSmoke = true;
+    }
+
+    /**
+     * Restore values previously copied from the debug panel...
+     * @see `addDebugPanelFolder`
+     */
+    setSettings( s:Settings ) {
+        this.splatForce = s.splatForce;
+        this.splatThickness = s.splatThickness;
+        this.vorticityInfluence = s.vorticityInfluence;
+        this.swirlIntensity = s.swirlIntensity;
+        this.pressure = s.pressure;
+        this.velocityDissipation = s.velocityDissipation;
+        this.densityDissipation = s.densityDissipation;
+        this.displacementScale = s.displacementScale;
+        this.pressureIterations = s.pressureIterations; 
     }
 }
