@@ -403,6 +403,20 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
         this._bumpDisplacmentScale.value = v;
     }
 
+    /**
+     * Color
+     */
+    get colorTexture() {
+         return this.dyeRT.texture;
+    }
+
+    /**
+     * Idk why you would need this but maybe you'll find this useful since it contains the velocities of the surface...
+     */
+    get dataTexture() {
+        return this.currentRT.texture;
+    }
+
     velocityDissipation = 0.283;
     densityDissipation = 0.2;
     pressureIterations = 39;
