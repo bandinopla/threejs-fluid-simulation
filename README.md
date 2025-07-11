@@ -1,7 +1,7 @@
 # ThreeJs Fluid Simulation
+A Fluid or Smoke ( or anything you can think of if you use the power of imagination and bend semantics enough) simulation. 
 
-[Play Demo here](https://threejs-fluid-simulation.vercel.app/)
-Download the class: [`FluidV3Material`](https://github.com/bandinopla/threejs-fluid-simulation/blob/main/src/FluidV3Material.ts)
+## [Play Demo here](https://threejs-fluid-simulation.vercel.app/) :rocket:
 
 <img src="./screenshot.png?raw=true" width="880">
 
@@ -20,8 +20,13 @@ fluidMat.dataTexture; //  THREE.Texture : R=Pressure  GB = velocity  A=wildcard/
 
 ## Usage
 
-To use this, copy and paste (everything is self contianed in that single class) the [`FluidV3Material`](https://github.com/bandinopla/threejs-fluid-simulation/blob/main/src/FluidV3Material.ts) class into your own project. 
+Copy and paste the class into your own project (everything is self contained in that single class) 
 
+### WebGL version : [src/FluidV3Material.ts](https://github.com/bandinopla/threejs-fluid-simulation/blob/main/src/FluidV3Material.ts)
+### WebGPU version : [src/FluidMaterialGPU.ts](https://github.com/bandinopla/threejs-fluid-simulation/blob/main/src/FluidMaterialGPU.ts)
+
+
+#### Example use of WebGl version:
 ```js
 const fluidMat = new FluidV3Material( 
     renderer, // reference to the threejs renderer (needed to do the simulation)
@@ -38,7 +43,8 @@ const fluidMesh = new THREE.Mesh( planeGeo, this.fluidMat );
 ## Track objects
 To add objects to affect the material (their prev and current position will be used as vectors of movement):
 ```js
-fluidMat.track( someObject3D, 1, 0xff0000 ); // object, ratio, color
+/*WebGL*/fluidMat.track( someObject3D, 1, 0xff0000 ); // object, ratio, color
+/*WebGPU*/fluidMat.track( someObject3D, 1, new THREE.Color(0xff0000) ); // object, ratio, color
 fluidMat.untrack( someObject3D ); 
 ```
 
