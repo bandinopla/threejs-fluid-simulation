@@ -494,7 +494,7 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
         // ------
         //#region quad scene
         // Fullscreen camera and quad scene
-        const camera = new OrthographicCamera();
+        const camera = new OrthographicCamera(-1, 1, 1, -1, -1, 2000);
         const sceneWithQuad = new Scene();
 
         const quadGeom = new PlaneGeometry(2, 2); 
