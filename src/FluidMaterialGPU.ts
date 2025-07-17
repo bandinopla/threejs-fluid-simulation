@@ -25,7 +25,7 @@ SOFTWARE.
 */
 import GUI from "three/examples/jsm/libs/lil-gui.module.min.js";
 import { abs, add, clamp, Continue, cross, debug, distance, dot, Fn, If, length, Loop, max, mix, modelNormalMatrix, mul, normalGeometry, normalize, positionLocal, smoothstep, texture, uniform, uv, vec2, vec3, vec4, type ShaderNodeObject } from "three/tsl";
-import { Camera, Color, DataTexture, DoubleSide, FloatType, LinearFilter, Mesh, MeshBasicNodeMaterial, MeshPhysicalNodeMaterial, NearestFilter, Object3D, PlaneGeometry, Raycaster, RenderTarget, RGBAFormat, Scene, Texture, TextureNode, UniformNode, Vector2, Vector3, WebGPURenderer, type ColorRepresentation } from "three/webgpu";
+import { Camera, Color, DataTexture, DoubleSide, FloatType, LinearFilter, Mesh, MeshBasicNodeMaterial, MeshPhysicalNodeMaterial, NearestFilter, Object3D, OrthographicCamera, PlaneGeometry, Raycaster, RenderTarget, RGBAFormat, Scene, Texture, TextureNode, UniformNode, Vector2, Vector3, WebGPURenderer, type ColorRepresentation } from "three/webgpu";
  
 type Sampler2D = ShaderNodeObject<TextureNode>;
 type UniformVec2 = ShaderNodeObject<UniformNode<Vector2>>;
@@ -494,7 +494,7 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
         // ------
         //#region quad scene
         // Fullscreen camera and quad scene
-        const camera = new Camera();
+        const camera = new OrthographicCamera();
         const sceneWithQuad = new Scene();
 
         const quadGeom = new PlaneGeometry(2, 2); 
