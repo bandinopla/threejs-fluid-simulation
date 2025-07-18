@@ -23,52 +23,94 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-import GUI from "three/examples/jsm/libs/lil-gui.module.min.js";
-import { abs, add, clamp, Continue, cross, debug, distance, dot, Fn, If, length, Loop, max, mix, modelNormalMatrix, mul, normalGeometry, normalize, positionLocal, smoothstep, texture, uniform, uv, vec2, vec3, vec4, type ShaderNodeObject } from "three/tsl";
-import { Color, DataTexture, DoubleSide, FloatType, LinearFilter, Mesh, MeshBasicNodeMaterial, MeshPhysicalNodeMaterial, NearestFilter, Object3D, OrthographicCamera, PlaneGeometry, Raycaster, RenderTarget, RGBAFormat, Scene, Texture, TextureNode, UniformNode, Vector2, Vector3, WebGPURenderer, type ColorRepresentation } from "three/webgpu";
+import GUI from "three/examples/jsm/libs/lil-gui.module.min.js"; 
+import { NodeRepresentation, storage, abs, add, clamp, Continue, cross, debug, distance, dot, Fn, If, instanceIndex, length, Loop, max, mix, modelNormalMatrix, mul, normalGeometry, normalize, positionLocal, smoothstep, storageTexture, texture, textureStore, uniform, uv, uvec2, vec2, vec3, vec4, type ShaderNodeObject, textureLoad } from "three/tsl";
+import { Color, ComputeNode, DataTexture, DoubleSide, FloatType, Mesh, MeshBasicNodeMaterial, MeshPhysicalNodeMaterial, NearestFilter, Node, Object3D, OrthographicCamera, PlaneGeometry, Raycaster, RenderTarget, RGBAFormat, Scene, StorageBufferAttribute, StorageTexture, Texture, TextureNode, UniformNode, Vector2, Vector3, WebGPURenderer, type ColorRepresentation } from "three/webgpu";
  
 type Sampler2D = ShaderNodeObject<TextureNode>;
-type UniformVec2 = ShaderNodeObject<UniformNode<Vector2>>;
-
-let placeholderTexture = new Texture();
+type UniformVec2 = ShaderNodeObject<UniformNode<Vector2>>; 
+const placeholderTexture = new Texture();
  placeholderTexture.flipY = false; 
 
-const offsetSample = Fn<[Sampler2D, UniformVec2, number, number]>(([ sampler, texel, x, y ])=>{
-     return sampler.sample( uv().add( texel.mul( vec2(x,y) ) )  );
-});
-
+const offsetSample = Fn<[Sampler2D, ShaderNodeObject<Node>, ShaderNodeObject<Node>, number, number]>(([ sampler, uv, texel, x, y ])=>{
+  
+     return sampler.sample( uv.add( texel.mul( vec2(x,y) ) )  );
+}); 
 //----------------------------------------------------
- 
 
-class ScrollShader extends MeshBasicNodeMaterial
+class ComputeShader { 
+
+    private textureToShader:Map<Texture, ShaderNodeObject<ComputeNode>>;
+
+    constructor( private fn:( pixelPos:ShaderNodeObject<Node>, uvPos:ShaderNodeObject<Node>, texelSize:ShaderNodeObject<Node> )=>NodeRepresentation )
+    {
+        this.textureToShader = new Map<Texture, ShaderNodeObject<ComputeNode>>()
+    } 
+
+    private create( outTo:Texture, width:number, height:number ) { 
+
+        return Fn(() => {
+
+            const resolution = vec2(width, height);
+            const posX = instanceIndex.mod( width );
+            const posY = instanceIndex.div( width );
+            const pixelPosition = vec2( posX, posY );
+            const uvCoord = vec2(pixelPosition.add(vec2(0.5,0.5))).div(resolution); 
+            const textelSize = vec2(1,1).div(resolution);
+
+            return textureStore( outTo, pixelPosition, this.fn(pixelPosition, uvCoord, textelSize)  ).toWriteOnly(); 
+
+        })().compute(width*height)
+    }
+
+    createBinds( width:number, height:number, ...targets:Texture[] )
+    { 
+        for(const target of targets)
+            this.textureToShader.set(target, this.create(target, width, height)) ; 
+        return this;
+    }
+
+    renderBind( renderer:WebGPURenderer, bindTarget:Texture )
+    {
+        if( !this.textureToShader.has(bindTarget) )
+        {
+            throw new Error("You are trying to render to a texture that this shader doesn't have. Did you forgot to call createBindTo?")
+        }
+
+        renderer.compute( this.textureToShader.get(bindTarget)! );
+
+        return bindTarget;
+    }
+
+}
+
+class ScrollShader extends ComputeShader
 {  
     readonly uvScroll = uniform(new Vector2())
     constructor( uTarget:Sampler2D ) {  
-        super();
-        this.fragmentNode = uTarget.sample( uv().add( this.uvScroll ));
+        super( ( _pixelPos, uvPos ) =>{
+            return uTarget.sample( uvPos.add( this.uvScroll ))
+        }); 
     }
 }
 
-class SplatShader extends MeshBasicNodeMaterial {
-    readonly splatVelocity = uniform( 1 );
-    readonly count = uniform(1); 
+class SplatShader extends ComputeShader {
+    readonly splatVelocity = uniform( 1 ); 
     readonly splatForce = uniform(-196);
     readonly thickness = uniform(1);
 
-    constructor( uTarget:Sampler2D, uData:Sampler2D, textelSize:UniformVec2 ) {
-        super();   
+    constructor( uTarget:Sampler2D, positionAttr:StorageBufferAttribute, colorAttr:StorageBufferAttribute, count:number ) {
+        console.log(positionAttr)
+        super( ( _pixelPos, vUv, textelSize) => { 
 
-        this.fragmentNode = Fn(()=>{
- 
-            const vUv = uv();
-            const pixel = uTarget.sample(vUv ).toVar('pixel');
+            const pixel = uTarget.sample( vUv ).toVar('pixel');
             
-            Loop( this.count, ( { i } ) => {
+            Loop( count, ( { i } ) => {
  
-                const pos = uData.sample( vec2(i, 0));
+                const pos = storage(positionAttr, "vec4", count).element(i);
                 const curr = pos.xy;
                 const prev = pos.zw;
-                const data = uData.sample( vec2(i, 1));
+                const data = storage(colorAttr, "vec4", count).element(i);
                 const color = data.rgb;
                 const ratio = data.a.mul( this.thickness );
                  
@@ -112,45 +154,41 @@ class SplatShader extends MeshBasicNodeMaterial {
            ;
 
             return pixel;
-
-        })();
+        } );   
+ 
  
     } 
 }
 
-class CurlShader extends MeshBasicNodeMaterial {
+class CurlShader extends ComputeShader {
     readonly vorticityInfluence = uniform(1);
 
-    constructor( uVelocity:Sampler2D, textelSize:UniformVec2 ) {
-        super(); 
-        this.fragmentNode = Fn(()=>{
-
-            const L = offsetSample(uVelocity, textelSize, -1, 0).b; 
-            const R = offsetSample(uVelocity, textelSize, 1, 0).b; 
-            const T = offsetSample(uVelocity, textelSize, 0, 1).g; 
-            const B = offsetSample(uVelocity, textelSize, 0, -1).g; 
+    constructor( uVelocity:Sampler2D ) {
+        super( (_,vUv,textelSize)=>{
+            const L = offsetSample(uVelocity, vUv, textelSize, -1, 0).b; 
+            const R = offsetSample(uVelocity, vUv, textelSize, 1, 0).b; 
+            const T = offsetSample(uVelocity, vUv, textelSize, 0, 1).g; 
+            const B = offsetSample(uVelocity, vUv, textelSize, 0, -1).g; 
             const vorticity = R.sub( L ).sub( T ).add( B ); 
-            const pixel = uVelocity.sample( uv() ).toVar("pixel"); 
+            const pixel = uVelocity.sample( vUv ).toVar("pixel"); 
 
             return  vec4( pixel.xyz, this.vorticityInfluence.mul(vorticity) ) ; 
-
-        })();
+        } );  
     }
 }
 
-class VorticityShader extends MeshBasicNodeMaterial {
+class VorticityShader extends ComputeShader {
     readonly curl = uniform(30);
     readonly delta = uniform(0)
 
-    constructor( uTarget:Sampler2D, textelSize:UniformVec2 ) {
-        super();
-        this.fragmentNode = Fn(()=>{
-            const L = offsetSample(uTarget, textelSize, -1, 0).a; 
-            const R = offsetSample(uTarget, textelSize, 1, 0).a; 
-            const T = offsetSample(uTarget, textelSize, 0, 1).a; 
-            const B = offsetSample(uTarget, textelSize, 0, -1).a; 
+    constructor( uTarget:Sampler2D ) {
+        super(( _, vUv, textelSize)=>{
+            const L = offsetSample(uTarget, vUv, textelSize, -1, 0).a; 
+            const R = offsetSample(uTarget, vUv, textelSize, 1, 0).a; 
+            const T = offsetSample(uTarget, vUv, textelSize, 0, 1).a; 
+            const B = offsetSample(uTarget, vUv, textelSize, 0, -1).a; 
 
-            const pixel = uTarget.sample( uv() ).toVar("pixel");
+            const pixel = uTarget.sample( vUv ).toVar("pixel");
             const C = pixel.a ;
 
             const force = mul(0.5, vec2( abs( T ).sub( abs( B ) ), abs( R ).sub( abs( L ) ) )) .toVar("force");
@@ -163,23 +201,20 @@ class VorticityShader extends MeshBasicNodeMaterial {
             const velocity = pixel.gb .add( force.mul( this.delta ) )
 
             return vec4( pixel.r, velocity, 0 )  ;
-        })();
+        });
     }
 }
 
-class DivergenceShader extends MeshBasicNodeMaterial {
-    constructor( uVelocity:Sampler2D, textelSize:UniformVec2 ) {
-        super();
+class DivergenceShader extends ComputeShader {
+    constructor( uVelocity:Sampler2D ) {
+        super( (_,vUv, textelSize )=>{ 
 
-        this.fragmentNode = Fn(()=>{
-            const vUv = uv();
+            const L = offsetSample(uVelocity, vUv, textelSize, -1, 0).g.toVar("L"); 
+            const R = offsetSample(uVelocity, vUv, textelSize, 1, 0).g.toVar("R"); 
+            const T = offsetSample(uVelocity, vUv, textelSize, 0, 1).b.toVar("T"); 
+            const B = offsetSample(uVelocity, vUv, textelSize, 0, -1).b.toVar("B"); 
 
-            const L = offsetSample(uVelocity, textelSize, -1, 0).g.toVar("L"); 
-            const R = offsetSample(uVelocity, textelSize, 1, 0).g.toVar("R"); 
-            const T = offsetSample(uVelocity, textelSize, 0, 1).b.toVar("T"); 
-            const B = offsetSample(uVelocity, textelSize, 0, -1).b.toVar("B"); 
-
-            const pixel = uVelocity.sample(uv());
+            const pixel = uVelocity.sample(vUv);
             const C = pixel.gb ; // velocity info... 
 
             If( vUv.x.sub(textelSize.x).lessThan(0), ()=>L.assign( C.x.negate() ) ); 
@@ -190,35 +225,32 @@ class DivergenceShader extends MeshBasicNodeMaterial {
             const div = mul( 0.5, R.sub( L ).add( T.sub( B ) ) ); 
 
             return vec4( pixel.r, C, div );
-        })();
+        }) ;
     }
 }
 
-class ClearShader extends MeshBasicNodeMaterial {
+class ClearShader extends ComputeShader {
     readonly decay = uniform(0.317);
 
     constructor( uTarget:Sampler2D ) {
-        super();
-        this.fragmentNode = Fn(()=>{
+        super( (_,vUv )=>{
 
-            const pixel = uTarget.sample( uv() ) ;  
-
+            const pixel = uTarget.sample( vUv ) ;   
             return vec4( pixel.r.mul(this.decay), pixel.gba ) ;
 
-        })();
+        }) ;
     }
 }
 
-class PressureShader extends MeshBasicNodeMaterial {
-    constructor( uTarget:Sampler2D, textelSize:UniformVec2) {
-        super();
-        this.fragmentNode = Fn(()=>{
+class PressureShader extends ComputeShader {
+    constructor( uTarget:Sampler2D, ) {
+        super( (_,vUv, textelSize)=>{
 
-            const L = offsetSample(uTarget, textelSize, -1, 0).x; 
-            const R = offsetSample(uTarget, textelSize, 1, 0).x;
-            const T = offsetSample(uTarget, textelSize, 0, 1).x;
-            const B = offsetSample(uTarget, textelSize, 0, -1).x;
-            const pixel = uTarget.sample( uv() ).toVar(); 
+            const L = offsetSample(uTarget, vUv, textelSize, -1, 0).x; 
+            const R = offsetSample(uTarget, vUv, textelSize, 1, 0).x;
+            const T = offsetSample(uTarget, vUv, textelSize, 0, 1).x;
+            const B = offsetSample(uTarget, vUv, textelSize, 0, -1).x;
+            const pixel = uTarget.sample( vUv ).toVar(); 
            
             const divergence = pixel.a;
 
@@ -226,50 +258,47 @@ class PressureShader extends MeshBasicNodeMaterial {
   
             return vec4( pressure, pixel.gba );
 
-        })();
+        }) ;
     }
 }
 
-class GradientSubtractShader extends MeshBasicNodeMaterial {
-    constructor( uTarget:Sampler2D, textelSize:UniformVec2) {
-        super();
-        this.fragmentNode = Fn(()=>{
+class GradientSubtractShader extends ComputeShader {
+    constructor( uTarget:Sampler2D ) {
+        super( (_,vUv, textelSize)=>{
 
-            const L = offsetSample(uTarget, textelSize, -1, 0).x; 
-            const R = offsetSample(uTarget, textelSize, 1, 0).x;
-            const T = offsetSample(uTarget, textelSize, 0, 1).x;
-            const B = offsetSample(uTarget, textelSize, 0, -1).x;
+            const L = offsetSample(uTarget, vUv, textelSize, -1, 0).x; 
+            const R = offsetSample(uTarget, vUv, textelSize, 1, 0).x;
+            const T = offsetSample(uTarget, vUv, textelSize, 0, 1).x;
+            const B = offsetSample(uTarget, vUv, textelSize, 0, -1).x;
 
-            const pixel = uTarget.sample( uv() ).toVar(); 
+            const pixel = uTarget.sample( vUv ).toVar(); 
             const velocity = pixel.gb.toVar("velocity");
 
             velocity.subAssign( vec2( R.sub( L ), T.sub( B ) ) );
 
             return vec4( pixel.r, velocity, 0.0 );
-        })();
+        }) ;
     }
 } 
 
-class AdvectShader extends MeshBasicNodeMaterial {
+class AdvectShader extends ComputeShader {
     readonly sourceIsVelocity = uniform(0);
     readonly delta = uniform(0);
     readonly dissipation = uniform(0.1);
     readonly uSource:Sampler2D = texture(placeholderTexture);
 
-    constructor( uVelocity:Sampler2D, textelSize:UniformVec2 ) {
-        super();  
-        this.fragmentNode = Fn(()=>{    
+    constructor( uVelocity:Sampler2D ) {
+        super( (_,vUv, textelSize)=>{    
 
-            const original = debug( uVelocity.sample(uv()) );
+            const original = uVelocity.sample(vUv) ;
             const velocity = original.yz ;  
-            const coord = uv().sub( this.delta.mul( velocity ).mul( textelSize ) );  
+            const coord = vUv.sub( this.delta.mul( velocity ).mul( textelSize ) );  
             const result = this.uSource.sample( coord ).toVar("pixel");  
             const decay = add( 1.0, this.dissipation.mul( this.delta ) );
             result.divAssign( decay );
 
             If( this.sourceIsVelocity , ()=>
-            {    
-
+            {     
                 result.assign(vec4(
                     original.r,
                     result.gb,
@@ -278,9 +307,8 @@ class AdvectShader extends MeshBasicNodeMaterial {
 
             } )  
 
-            return result ;
- 
-        })();
+            return result ; 
+        }) ;
     }
 } 
 
@@ -361,20 +389,21 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
     private tmp:Vector3 = new Vector3();
     private tmp2:Vector3 = new Vector3();
 
-    private currentRT:RenderTarget;
-    private nextRT:RenderTarget; 
+    private currentRT:StorageTexture;
+    private nextRT:StorageTexture; 
 
     private uTarget:Sampler2D;
-    private uData:Sampler2D;
 
-    private dyeRT:RenderTarget;
-    private nextDyeRT:RenderTarget;
+    private dyeRT:StorageTexture;
+    private nextDyeRT:StorageTexture;
 
     private objectDataArray:Float32Array; 
-    private objectDataTexture:DataTexture;
+    private objectPositionsArray:Float32Array; 
+    private objectDataAttribute:StorageBufferAttribute;
+    private objectPositionAttribute:StorageBufferAttribute;
 
     private tracking:TrackedObject[];
-    private renderMaterial:(material?:MeshBasicNodeMaterial, target?:RenderTarget )=>void; 
+    private renderMaterial:( material:ComputeShader, target:Texture )=>void; 
   
 
     get splatForce() {
@@ -407,14 +436,14 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
      * Color
      */
     get colorTexture() {
-         return this.dyeRT.texture;
+         return this.dyeRT;
     }
 
     /**
      * Idk why you would need this but maybe you'll find this useful since it contains the velocities of the surface...
      */
     get dataTexture() {
-        return this.currentRT.texture;
+        return this.currentRT;
     }
 
     velocityDissipation = 0.283;
@@ -443,13 +472,8 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
         });
 
         this.raycaster = new Raycaster();
-
-        const rt = ()=>{
-            const _rt = new RenderTarget(textureWidth, textureHeight, { type: FloatType, format: RGBAFormat });
-            _rt.texture.minFilter = LinearFilter;
-            _rt.texture.magFilter = LinearFilter;
-            return _rt;
-        }
+ 
+        const rt = ()=>new StorageTexture(textureWidth, textureHeight);
 
         this.currentRT = rt();
         this.nextRT = rt();
@@ -457,70 +481,44 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
         this.nextDyeRT = rt();
  
  
-        this.objectDataArray = new Float32Array(objectCount * 4 * 2);  
+        this.objectPositionsArray = new Float32Array( objectCount * 4 );  
+        this.objectDataArray = new Float32Array( objectCount * 4 );  
 
-        // 
-        this.objectDataTexture = new DataTexture(
-            this.objectDataArray,
-            objectCount, // width
-            2,           // 1nd row  = current.x, current.y, prev.x, prev.y 
-                         // 2st row = R, G, B, ratio 
-            RGBAFormat,
-            FloatType
-        );  
-        this.objectDataTexture.minFilter = NearestFilter;
-        this.objectDataTexture.magFilter = NearestFilter;
-        this.objectDataTexture.needsUpdate = true;
+        this.objectPositionAttribute = new StorageBufferAttribute( this.objectPositionsArray, 4 );
+        this.objectDataAttribute = new StorageBufferAttribute( this.objectDataArray, 4 ); 
 
         this.tracking = new Array(objectCount).fill(0).map((_, index) => new TrackedObject(index));
 
         const texel = uniform(new Vector2( 1/textureWidth, 1/textureHeight ));
 
 
-        this.uTarget = texture( placeholderTexture);
-        this.uData = texture( placeholderTexture ); 
+        this.uTarget = texture( placeholderTexture); 
 
-        this.scroll = new ScrollShader( this.uTarget );
-        this.splat = new SplatShader( this.uTarget, this.uData, texel );
-        this.splat.count.value = objectCount;
-        this.curl = new CurlShader( this.uTarget, texel );
-        this.vorticity = new VorticityShader( this.uTarget, texel );
-        this.divergence = new DivergenceShader( this.uTarget, texel );
-        this.clear = new ClearShader( this.uTarget );
-        this.pressure = new PressureShader( this.uTarget, texel );
-        this.gradient = new GradientSubtractShader( this.uTarget, texel);
-        this.advect = new AdvectShader(this.uTarget, texel);
+        const w = textureWidth;
+        const h = textureHeight;
+        const velA = this.currentRT;
+        const velB = this.nextRT;
+        const dyeA = this.dyeRT;
+        const dyeB = this.nextDyeRT; 
+
+        this.scroll = new ScrollShader( this.uTarget ).createBinds(w,h,velA,velB,dyeA,dyeB);
+        this.splat = new SplatShader( this.uTarget, this.objectPositionAttribute, this.objectDataAttribute, objectCount ).createBinds(w,h,velA,velB,dyeA,dyeB);
+      
+        this.curl = new CurlShader( this.uTarget ).createBinds(w,h,velA,velB);
+        this.vorticity = new VorticityShader( this.uTarget ).createBinds(w,h,velA,velB);
+        this.divergence = new DivergenceShader( this.uTarget ).createBinds(w,h,velA,velB);
+        this.clear = new ClearShader( this.uTarget ).createBinds(w,h,velA,velB);
+        this.pressure = new PressureShader( this.uTarget ).createBinds(w,h,velA,velB);
+        this.gradient = new GradientSubtractShader( this.uTarget).createBinds(w,h,velA,velB);
+        this.advect = new AdvectShader(this.uTarget).createBinds(w,h,velA,velB,dyeA,dyeB); 
  
-        // ------
-        //#region quad scene
-        // Fullscreen camera and quad scene
-        const camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
-        const sceneWithQuad = new Scene();
-
-        const quadGeom = new PlaneGeometry(2, 2); 
-        const quadMesh = new Mesh(quadGeom);
-              sceneWithQuad.add(quadMesh);
-
-              quadMesh.scale.y=-1 
-
-        this.renderMaterial = ( material, target ) => {
-            if(!material || !target)
-            {
-                renderer.setRenderTarget(null);
-                return;
-            }
-            material.side = DoubleSide;
-            quadMesh.material = material;
-            renderer.setRenderTarget(target);
-            renderer.render(sceneWithQuad, camera); 
-            renderer.setRenderTarget(null); // flush
-            
+          
+        this.renderMaterial = ( material, target ) => { 
+            material.renderBind( renderer, target );
         }
         //#endregion
         //--------------------------------------------------------------------------------------------------------------------------------------
- 
-        // LUTs  
-
+  
 
         /////// displacement
         const maxChannel = this.uTarget.sample(uv());
@@ -533,10 +531,12 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
         {
             this.opacityNode = maxValue;
         }
+
+        this.colorNode = this.uTarget;
         
 
         ///// fix shading...  
-        const height = Fn<[ShaderNodeObject<any>]>(([uvOffset]) =>
+        const height = Fn<[ShaderNodeObject<Node>]>(([uvOffset]) =>
                 dot(this.uTarget.sample( uv().add(uvOffset)).rgb, vec3(0.299, 0.587, 0.114)));
 
         this.normalNode = Fn(() => {
@@ -582,25 +582,24 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
 
         freeSlot.onChange = ()=>{
 
-            console.log("COLOR!")
+            console.log("COLOR!") 
 
-            const row2 = this.tracking.length * 4 + i * 4; //inthe 1st row we store positions  
+            this.objectDataArray[ i * 4 ] = freeSlot.color?.r ?? 0;
+            this.objectDataArray[ i * 4 + 1 ] = freeSlot.color?.g ?? 0;
+            this.objectDataArray[ i * 4 + 2 ] = freeSlot.color?.b ?? 0;
+            this.objectDataArray[ i * 4 + 3 ] = freeSlot.ratio; 
 
-            this.objectDataArray[ row2 ] = freeSlot.color?.r ?? 0;
-            this.objectDataArray[ row2 + 1 ] = freeSlot.color?.g ?? 0;
-            this.objectDataArray[ row2 + 2 ] = freeSlot.color?.b ?? 0;
-            this.objectDataArray[ row2 + 3 ] = freeSlot.ratio; 
-
-            if(!freeSlot.target )
+            if( !freeSlot.target )
             {
-                this.objectDataArray[ i * 4 ] = 0;
-                this.objectDataArray[ i * 4 + 1 ] = 0;
-                this.objectDataArray[ i * 4 + 2 ] = 0;
-                this.objectDataArray[ i * 4 + 3 ] = 0; 
-            }
+                this.objectPositionsArray[ i * 4 ] = 0;
+                this.objectPositionsArray[ i * 4 + 1 ] = 0;
+                this.objectPositionsArray[ i * 4 + 2 ] = 0;
+                this.objectPositionsArray[ i * 4 + 3 ] = 0; 
 
-            this.objectDataTexture.needsUpdate = true;
-            this.uData.value = this.objectDataTexture; 
+                this.objectPositionAttribute.needsUpdate = true;
+            }
+ 
+            this.objectDataAttribute.needsUpdate = true;
         } 
 
 
@@ -612,13 +611,19 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
 
     untrack( object:Object3D )
     {
-        this.tracking.forEach( t=> {
+        this.tracking.forEach( (t,i)=> {
 
             if( t.target==object )
             { 
                 t.target = undefined;
                 t.ratio = 0;
                 t.color = undefined; 
+
+                this.objectPositionsArray[ i * 4 ] = 0;
+                this.objectPositionsArray[ i * 4 + 1 ] = 0;
+                this.objectPositionsArray[ i * 4 + 2 ] = 0;
+                this.objectPositionsArray[ i * 4 + 3 ] = 0;  
+                this.objectPositionAttribute.needsUpdate = true;
             }
 
         });
@@ -627,37 +632,33 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
     /**
      * Renders the material into the next render texture and then swaps them so the new currentRT is the one that was generated by the material.
      */
-    private blit( material:MeshBasicNodeMaterial )
+    private blit( material:ComputeShader )
     {  
         this.renderMaterial(material,this.nextRT ); 
         //swap
         [this.currentRT, this.nextRT] = [this.nextRT, this.currentRT]; 
  
-        this.uTarget.value = this.currentRT.texture; 
+        this.uTarget.value = this.currentRT ; 
  
     }
 
-    private blitDye( material:MeshBasicNodeMaterial ) 
+    private blitDye( material:ComputeShader ) 
     { 
         this.renderMaterial(material,this.nextDyeRT ); 
         //swap
         [this.dyeRT, this.nextDyeRT] = [this.nextDyeRT, this.dyeRT];
 
-        this.uTarget.value = this.currentRT.texture; 
+        this.uTarget.value = this.currentRT; 
         
     }
 
     private scrollTextures( uvStep:Vector2 )
     {
         this.scroll.uvScroll.value = uvStep;
-        this.uTarget.value = this.currentRT.texture;
-        this.blit( this.scroll );  
-
-        this.scroll.uvScroll.value = uvStep; 
+        this.uTarget.value = this.currentRT; 
+        this.blit( this.scroll );   
  
-        this.blit( this.scroll );  
- 
-        this.uTarget.value = this.dyeRT.texture;
+        this.uTarget.value = this.dyeRT;
         this.blitDye( this.scroll );  
     }
 
@@ -689,10 +690,10 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
 
         let offset:Vector2|undefined; //UV Offset
 
-        // update objects positions....
-        this.tracking.forEach( obj => {
+        // update objects positions.... 
+        for( const obj of this.tracking ) {
 
-            if( !obj.target ) return; 
+            if( !obj.target ) continue; 
              
             this.tmp.set(0,1,0); //<--- assuming the origin ob the objects is at the bottom of the models.
             const wpos = obj.target.localToWorld( this.tmp );
@@ -727,12 +728,12 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
                     if( followingObj )
                     {
                         // old positions...
-                        this.objectDataArray[i * 4 + 2] = uv.x;
-                        this.objectDataArray[i * 4 + 3] = uv.y; 
+                        this.objectPositionsArray[i * 4 + 2] = uv.x;
+                        this.objectPositionsArray[i * 4 + 3] = uv.y; 
 
                         // new positions...
-                        this.objectDataArray[i * 4 + 0] = 0.5;
-                        this.objectDataArray[i * 4 + 1] = 0.5; 
+                        this.objectPositionsArray[i * 4 + 0] = 0.5;
+                        this.objectPositionsArray[i * 4 + 1] = 0.5; 
 
                         ///////
                         offset = new Vector2(  0.5-uv.x, 0.5-uv.y );
@@ -742,20 +743,19 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
                     else 
                     {
                         // old positions...
-                        this.objectDataArray[i * 4 + 2] = this.objectDataArray[i * 4 + 0];
-                        this.objectDataArray[i * 4 + 3] = this.objectDataArray[i * 4 + 1]; 
+                        this.objectPositionsArray[i * 4 + 2] = this.objectPositionsArray[i * 4];
+                        this.objectPositionsArray[i * 4 + 3] = this.objectPositionsArray[i * 4 + 1]; 
 
                         // new positions...
-                        this.objectDataArray[i * 4 + 0] = uv.x;
-                        this.objectDataArray[i * 4 + 1] = uv.y; 
- 
+                        this.objectPositionsArray[i * 4 ] = uv.x;
+                        this.objectPositionsArray[i * 4 + 1] = uv.y;  
                     } 
  
                 }
                 
             } 
 
-        }); 
+        }; 
 
         if( this.follow && offset!=null )
         {
@@ -764,14 +764,14 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
                 if( obj.target && obj.target!=this.follow )
                 { 
                     const i = obj.index;
-                    this.objectDataArray[i * 4 + 2] -= offset!.x;  
-                    this.objectDataArray[i * 4 + 3] -= offset!.y;  
+                    this.objectPositionsArray[i * 4 + 2] -= offset!.x;  
+                    this.objectPositionsArray[i * 4 + 3] -= offset!.y;  
                 }
             });
         }
 
-        this.objectDataTexture.needsUpdate = true;
-        this.uData.value = this.objectDataTexture; 
+        this.objectPositionAttribute.needsUpdate = true; 
+      
     }
 
     ccc = true;
@@ -780,7 +780,7 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
     { 
         this.t += delta; 
 
-        this.uTarget.value = this.currentRT.texture; 
+        this.uTarget.value = this.currentRT; 
         
         this.updatePositions( mesh );  
         
@@ -791,7 +791,7 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
 
         // Splat colorcolors
         this.splat.splatVelocity.value = 0;  
-        this.uTarget.value = this.dyeRT.texture; 
+        this.uTarget.value = this.dyeRT; 
         this.blitDye( this.splat );  
 
         // // 2. vorticity : will be put into the alpha channel... 
@@ -818,22 +818,21 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
 
         //8. Advect velocity
         this.advect.delta.value = delta;
-        this.advect.uSource.value = this.currentRT.texture;
+        this.advect.uSource.value = this.currentRT;
         this.advect.sourceIsVelocity.value = 1;
         this.advect.dissipation.value = this.velocityDissipation;
         this.blit( this.advect );
 
         // 8. Advect dye / color
-        this.advect.uSource.value = this.dyeRT.texture;
+        this.advect.uSource.value = this.dyeRT;
         this.advect.sourceIsVelocity.value = 0;
         this.advect.dissipation.value = this.densityDissipation;
         this.blitDye( this.advect );
 
-        // restore renderer to original target...
-        this.renderMaterial(undefined, undefined);  
+        // restore renderer to original target... 
 
-        this.uTarget.value = this.dyeRT.texture;
-        this.map = this.dyeRT.texture;   
+        this.uTarget.value = this.dyeRT;
+        // this.map = this.dyeRT;   
     } 
 
     addDebugPanelFolder( gui:GUI, name="Fluid Material") {

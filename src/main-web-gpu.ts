@@ -15,11 +15,8 @@ const panel = new GUI({ width: 310 });
 const renderer = new THREE.WebGPURenderer({ antialias: true });
 document.body.appendChild(renderer.domElement);
 renderer.setSize(innerWidth, innerHeight);
-
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.5;
+renderer.setAnimationLoop(animate)
+ 
 
 // Setup camera and scene
 const camera = new THREE.PerspectiveCamera(
@@ -54,7 +51,7 @@ const size = 1024 / 2; //Remember 4 textures will be created with this size...
 const sizey = size;
 const objectCount = 2;
 
-const planeGeo = new THREE.PlaneGeometry(3, 3, 200, 200);
+const planeGeo = new THREE.PlaneGeometry(3, 3, 1, 1);
 planeGeo.rotateX(-Math.PI / 2);
 
 const fluidMat = new FluidMaterialGPU(renderer, size, sizey, objectCount);
@@ -68,10 +65,10 @@ scene.add(ball);
 ball.position.y = .02;
 
 
-const ball2 = new THREE.Mesh(new THREE.SphereGeometry(.06, 10, 10), new THREE.MeshPhysicalMaterial({ color: 0x00ff000 }));
-scene.add(ball2);
-ball.position.y = .02;
-ball.position.x = 1;
+// const ball2 = new THREE.Mesh(new THREE.SphereGeometry(.06, 10, 10), new THREE.MeshPhysicalMaterial({ color: 0x00ff000 }));
+// //scene.add(ball2);
+// ball.position.y = .02;
+// ball.position.x = 1;
 
 //fluidMat.follow = ball;
 
@@ -81,7 +78,7 @@ spot.intensity = 0.1; spot.position.set(0, .2, 0)
 ball.add(spot);
 
 fluidMat.track(ball, 10, new THREE.Color(0xff0000)); //<---- THIS IS WHAT MAKES THE LIQUID REACT TO OBJECTS
-fluidMat.track(ball2, 20, new THREE.Color(0x00ff00)); //<---- THIS IS WHAT MAKES THE LIQUID REACT TO OBJECTS
+//fluidMat.track(ball2, 20, new THREE.Color(0x00ff00)); //<---- THIS IS WHAT MAKES THE LIQUID REACT TO OBJECTS
 
 //------------------- DEBUG PANEL 
 fluidMat.addDebugPanelFolder(panel);
@@ -101,8 +98,7 @@ fluidMat.setSettings({
 
 const clock = new THREE.Clock();
 
-function animate() {
-    requestAnimationFrame(animate);
+function animate() { 
 
     const delta = clock.getDelta();
 
@@ -112,8 +108,8 @@ function animate() {
     ball.position.z = Math.sin(time) * .3;
 
 
-    ball2.position.x = .2 + Math.sin(time) * .2;
-    ball2.position.z = Math.cos(time) * .2;
+    // ball2.position.x = .2 + Math.sin(time) * .2;
+    // ball2.position.z = Math.cos(time) * .2;
 
     stats.begin();
     fluidMat.update(delta, fluidMesh);
@@ -121,7 +117,6 @@ function animate() {
 
     // Render main scene
     renderer.render(scene, camera);
-}
-animate();
+} 
 
 //--------------------------- 
