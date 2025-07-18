@@ -8,6 +8,8 @@ import "./index.css";
 import { FluidMaterialGPU } from './FluidMaterialGPU';
 
 const stats = new Stats();
+const clock = new THREE.Clock();
+
 document.body.appendChild(stats.dom);
 
 const panel = new GUI({ width: 310 });
@@ -16,6 +18,8 @@ const renderer = new THREE.WebGPURenderer({ antialias: true });
 document.body.appendChild(renderer.domElement);
 renderer.setSize(innerWidth, innerHeight);
 renderer.setAnimationLoop(animate)
+
+await renderer.init()
  
 
 // Setup camera and scene
@@ -96,7 +100,7 @@ fluidMat.setSettings({
 
 //---------------------------------------------------------
 
-const clock = new THREE.Clock();
+
 
 function animate() { 
 
