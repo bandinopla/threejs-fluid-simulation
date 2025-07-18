@@ -24,11 +24,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 import GUI from "three/examples/jsm/libs/lil-gui.module.min.js"; 
-import { NodeRepresentation, storage, abs, add, clamp, Continue, cross, debug, distance, dot, Fn, If, instanceIndex, length, Loop, max, mix, modelNormalMatrix, mul, normalGeometry, normalize, positionLocal, smoothstep, storageTexture, texture, textureStore, uniform, uv, uvec2, vec2, vec3, vec4, type ShaderNodeObject, textureLoad } from "three/tsl";
-import { Color, ComputeNode, DataTexture, DoubleSide, FloatType, Mesh, MeshBasicNodeMaterial, MeshPhysicalNodeMaterial, NearestFilter, Node, Object3D, OrthographicCamera, PlaneGeometry, Raycaster, RenderTarget, RGBAFormat, Scene, StorageBufferAttribute, StorageTexture, Texture, TextureNode, UniformNode, Vector2, Vector3, WebGPURenderer, type ColorRepresentation } from "three/webgpu";
+import { NodeRepresentation, storage, abs, add, clamp, Continue, cross, distance, dot, Fn, If, instanceIndex, length, Loop, max, mix, modelNormalMatrix, mul, normalGeometry, normalize, positionLocal, smoothstep, texture, textureStore, uniform, uv, vec2, vec3, vec4, type ShaderNodeObject } from "three/tsl";
+import { Color, ComputeNode, DoubleSide, Mesh, MeshPhysicalNodeMaterial, Node, Object3D, Raycaster, StorageBufferAttribute, StorageTexture, Texture, TextureNode, Vector2, Vector3, WebGPURenderer, type ColorRepresentation } from "three/webgpu";
  
-type Sampler2D = ShaderNodeObject<TextureNode>;
-type UniformVec2 = ShaderNodeObject<UniformNode<Vector2>>; 
+type Sampler2D = ShaderNodeObject<TextureNode>; 
 const placeholderTexture = new Texture();
  placeholderTexture.flipY = false; 
 
