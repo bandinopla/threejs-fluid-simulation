@@ -25,7 +25,7 @@ SOFTWARE.
 */
 import GUI from "three/examples/jsm/libs/lil-gui.module.min.js";
 import { NodeRepresentation, storage, abs, add, clamp, Continue, cross, distance, dot, Fn, If, instanceIndex, length, Loop, max, mix, modelNormalMatrix, mul, normalGeometry, normalize, positionLocal, smoothstep, texture, textureStore, uniform, uv, vec2, vec3, vec4, type ShaderNodeObject } from "three/tsl";
-import { Color, ComputeNode, DoubleSide, FloatType, Mesh, MeshPhysicalNodeMaterial, Node, Object3D, Raycaster, StorageBufferAttribute, StorageTexture, Texture, TextureNode, UniformNode, Vector2, Vector3, WebGPURenderer, type ColorRepresentation } from "three/webgpu";
+import { Color, ComputeNode, FloatType, Mesh, MeshPhysicalNodeMaterial, Node, Object3D, Raycaster, StorageBufferAttribute, StorageTexture, Texture, TextureNode, UniformNode, Vector2, Vector3, WebGPURenderer, type ColorRepresentation } from "three/webgpu";
 
 type Sampler2D = ShaderNodeObject<TextureNode>;
 type NumberUniform = ShaderNodeObject<UniformNode<number>>;
@@ -39,10 +39,10 @@ const offsetSample = Fn<[Sampler2D, ShaderNodeObject<Node>, ShaderNodeObject<Nod
 });
 //----------------------------------------------------
 const encode = Fn<[ShaderNodeObject<Node>, ShaderNodeObject<Node>]>(([ _maxValue, value ])=>{
-    return value //value.div(maxValue).add(1).div(2);
+    return value; //value.div(maxValue).add(1).div(2);
 }); 
 const decode = Fn<[ShaderNodeObject<Node>, ShaderNodeObject<Node>]>(([ _maxValue, value ])=>{
-    return value//.mul(2).sub(1).mul(maxValue);
+    return value; //.mul(2).sub(1).mul(maxValue);
 }); 
  
 
@@ -103,7 +103,7 @@ class SplatShader extends ComputeShader {
     /**
      * % of the max speed at which we can move
      */
-    readonly splatForce = uniform(0.1);
+    readonly splatForce = uniform(-.1);
     readonly thickness = uniform(1);
 
     constructor(uTarget: Sampler2D, positionAttr: StorageBufferAttribute, colorAttr: StorageBufferAttribute, count: number, maxVelocity:NumberUniform ) {
@@ -142,10 +142,10 @@ class SplatShader extends ComputeShader {
 
                     If(this.splatVelocity, () => {
 
-                        //const vel = diff.normalizeAssign() //normalize(diff).mul(this.splatForce.negate());
+                        const vel = normalize(diff).mul(this.splatForce.negate());
 
                         // Diff is in UV units... the diference between the new and the old UV positions.
-                        const vel = diff.normalize().mul( clamp( diff.length(), maxVelocity.negate(), maxVelocity ) );
+                        //const vel = diff.normalize().mul( clamp( diff.length(), maxVelocity.negate(), maxVelocity ) );
 
                         // vel will be a number between -1 and 1... 
                         pixel.assign(vec4(pixel.r, encode(maxVelocity, vel), 0));
@@ -191,7 +191,7 @@ class CurlShader extends ComputeShader {
 }
 
 class VorticityShader extends ComputeShader {
-    readonly curl = uniform(30);
+    readonly curl = uniform(2);
     readonly delta = uniform(0)
 
     constructor( uTarget: Sampler2D, maxVelocity:NumberUniform ) {
@@ -304,7 +304,7 @@ class AdvectShader extends ComputeShader {
 
             const original = uVelocity.sample(vUv);
             const velocity = decode( maxVelocity, original.yz );
-            const coord = vUv.sub(this.delta.mul(velocity))//.mul(textelSize));
+            const coord = vUv.sub(this.delta.mul(velocity)) ;
             const result = this.uSource.sample(coord).toVar("pixel");
             const decay = add(1.0, this.dissipation.mul(this.delta));
             result.divAssign(decay);
@@ -485,8 +485,7 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
         super({
             roughness: 0.5,
             color: new Color(0xcccccc),
-            transparent: false,
-            side: DoubleSide,
+            transparent: true, 
         });
 
         this.uMaxSpeed = uniform(settings?.maxSpeed ?? (1/10));
@@ -507,7 +506,7 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
    
 
         this.objectPositionsArray = new Float32Array(objectCount * 4);
-        this.objectDataArray = new Float32Array(objectCount * 9);
+        this.objectDataArray = new Float32Array(objectCount * 4);
 
         this.objectPositionAttribute = new StorageBufferAttribute(this.objectPositionsArray, 4);
         this.objectDataAttribute = new StorageBufferAttribute(this.objectDataArray, 4); 
@@ -562,7 +561,7 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
             this.opacityNode = maxValue;
         }
 
-        this.colorNode = this.uTarget;
+        this.colorNode = this.uTarget ;
 
 
         ///// fix shading...  
@@ -850,7 +849,7 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
 
         const panel = gui.addFolder(name);
 
-        panel.add(this as Record<string, any>, "splatForce", -1000, 1000);
+        panel.add(this as Record<string, any>, "splatForce", -.5, .5);
         panel.add(this as Record<string, any>, "splatThickness", 0.001, 1);
         panel.add(this as Record<string, any>, "vorticityInfluence", 0.1, 1);
         panel.add(this as Record<string, any>, "swirlIntensity", 1, 100);
