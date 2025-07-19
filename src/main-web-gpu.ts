@@ -17,11 +17,11 @@ const panel = new GUI({ width: 310 });
 const renderer = new THREE.WebGPURenderer({ antialias: true });
 document.body.appendChild(renderer.domElement);
 renderer.setSize(innerWidth, innerHeight);
-renderer.setAnimationLoop(animate)
 
-await renderer.init()
- 
 
+renderer.init().then(()=>{
+
+    renderer.setAnimationLoop(animate)
 // Setup camera and scene
 const camera = new THREE.PerspectiveCamera(
     45,
@@ -124,3 +124,7 @@ function animate() {
 } 
 
 //--------------------------- 
+});
+ 
+
+

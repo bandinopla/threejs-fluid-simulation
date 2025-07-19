@@ -25,7 +25,7 @@ SOFTWARE.
 */
 import GUI from "three/examples/jsm/libs/lil-gui.module.min.js";
 import { NodeRepresentation, storage, abs, add, clamp, Continue, cross, distance, dot, Fn, If, instanceIndex, length, Loop, max, mix, modelNormalMatrix, mul, normalGeometry, normalize, positionLocal, smoothstep, texture, textureStore, uniform, uv, vec2, vec3, vec4, type ShaderNodeObject } from "three/tsl";
-import { Color, ComputeNode, DoubleSide, Mesh, MeshPhysicalNodeMaterial, NearestFilter, Node, Object3D, Raycaster, StorageBufferAttribute, StorageTexture, Texture, TextureNode, UniformNode, Vector2, Vector3, WebGPURenderer, type ColorRepresentation } from "three/webgpu";
+import { Color, ComputeNode, DoubleSide, FloatType, Mesh, MeshPhysicalNodeMaterial, Node, Object3D, Raycaster, StorageBufferAttribute, StorageTexture, Texture, TextureNode, UniformNode, Vector2, Vector3, WebGPURenderer, type ColorRepresentation } from "three/webgpu";
 
 type Sampler2D = ShaderNodeObject<TextureNode>;
 type NumberUniform = ShaderNodeObject<UniformNode<number>>;
@@ -494,9 +494,8 @@ export class FluidMaterialGPU extends MeshPhysicalNodeMaterial {
         this.raycaster = new Raycaster();
 
         const rt = () => {
-            const txt = new StorageTexture(textureWidth, textureHeight);
-            txt.minFilter = NearestFilter;
-            txt.magFilter = NearestFilter;
+            const txt = new StorageTexture(textureWidth, textureHeight); 
+            txt.type = FloatType;
             return txt;
         }; 
 
