@@ -1,3 +1,5 @@
+**IMPORTANT**: The webGPU implementation is broken. I started a new branch [gpu compute branch](https://github.com/bandinopla/threejs-fluid-simulation/tree/gpu-compute) but I can't make it work and my computer runs GPU stuff at 1 or 3 FPS for some reason so i can't continue trying to fix this. If anyone knows how to do it, please, do it and do a pull request. I won't keep trying to fix the GPU implementation.
+
 # ThreeJs Fluid Simulation
 A Fluid or Smoke ( or anything you can think of if you use the power of imagination and bend semantics enough) simulation. 
 
@@ -23,7 +25,7 @@ fluidMat.dataTexture; //  THREE.Texture : R=Pressure  GB = velocity  A=wildcard/
 Copy and paste the class into your own project (everything is self contained in that single class) 
 
 ### WebGL version : [src/FluidV3Material.ts](https://github.com/bandinopla/threejs-fluid-simulation/blob/main/src/FluidV3Material.ts)
-### WebGPU version : [src/FluidMaterialGPU.ts](https://github.com/bandinopla/threejs-fluid-simulation/blob/main/src/FluidMaterialGPU.ts)
+### WebGPU (BROKEN) : [src/FluidMaterialGPU.ts](https://github.com/bandinopla/threejs-fluid-simulation/blob/gpu-compute/src/FluidMaterialGPU.ts)
 
 
 #### Example use of WebGl version:
